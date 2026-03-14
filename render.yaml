@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: collabcart-server
+    env: node
+    region: singapore
+    plan: free
+    rootDir: server
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: PORT
+        value: 4000
+      - key: MONGODB_URI
+        sync: false   # Set in Render dashboard
+      - key: CLIENT_URL
+        sync: false   # Your Vercel URL
+      - key: JWT_SECRET
+        generateValue: true
+      - key: OPENAI_API_KEY
+        sync: false   # Optional
