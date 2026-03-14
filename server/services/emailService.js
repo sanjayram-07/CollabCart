@@ -1,78 +1,63 @@
-const nodemailer = require('nodemailer');
-
-let transporter = null;
-
-function getTransporter() {
-  if (transporter) return transporter;
-
-  const host = process.env.SMTP_HOST || 'smtp.gmail.com';
-  const port = parseInt(process.env.SMTP_PORT || '465', 10);
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
-
-  if (!user || !pass) {
-    console.warn('⚠️  SMTP credentials not set — emails will not be sent.');
-    return null;
-  }
-
-  transporter = nodemailer.createTransport({
-    host,
-    port,
-    secure: true,              // force SSL — required for port 465 on Render
-    auth: { user, pass },
-    tls: {
-      rejectUnauthorized: false, // prevents self-signed cert errors on cloud hosts
-    },
-    connectionTimeout: 10000,  // 10s — prevents infinite hang
-    greetingTimeout: 10000,
-    socketTimeout: 15000,
-  });
-
-  return transporter;
-}
+// emailService.js
+// Uses Resend HTTP API — works on Render free tier (no SMTP ports needed)
+// Sign up free at https://resend.com → API Keys → Create Key
+// Add RESEND_API_KEY to Render environment variables
 
 async function sendMagicLinkEmail(toEmail, magicLink) {
-  const trans = getTransporter();
+  const apiKey = process.env.RESEND_API_KEY;
 
-  // Dev fallback — no SMTP configured
-  if (!trans) {
+  // Dev fallback — no API key configured
+  if (!apiKey) {
     if (process.env.NODE_ENV !== 'production') {
-      console.log('\n📧 [DEV] Magic link (SMTP not configured):', magicLink, '\n');
+      console.log('\n📧 [DEV] Magic link (Resend not configured):', magicLink, '\n');
       return { devMagicLink: magicLink };
     }
-    throw new Error('Email service not configured.');
+    throw new Error('RESEND_API_KEY is not set.');
   }
 
-  try {
-    await trans.sendMail({
-      from: process.env.SMTP_FROM || `"CollabCart Admin" <${process.env.SMTP_USER}>`,
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: 'CollabCart <onboarding@resend.dev>', // works without a custom domain
       to: toEmail,
-      subject: 'Your CollabCart Admin Login Link',
+      subject: '🔐 Your CollabCart Admin Login Link',
       html: `
-        <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
-          <h2 style="color: #4f63f5;">CollabCart Admin Login</h2>
-          <p>Click the link below to log in. This link expires in <strong>10 minutes</strong>.</p>
-          <p>
-            <a href="${magicLink}"
-               style="display:inline-block;padding:12px 24px;background:linear-gradient(135deg,#4f63f5,#7c3aed);color:white;text-decoration:none;border-radius:8px;font-weight:600;">
-              Log in to Admin
-            </a>
+        <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px;">
+          <h2 style="color:#4f63f5;margin-bottom:8px;">CollabCart Admin</h2>
+          <p style="color:#444;">Click the button below to log in to your admin dashboard.</p>
+          <p style="color:#888;font-size:13px;">This link expires in <strong>10 minutes</strong>.</p>
+          <a href="${magicLink}"
+             style="display:inline-block;margin:24px 0;padding:14px 28px;
+                    background:linear-gradient(135deg,#4f63f5,#7c3aed);
+                    color:white;text-decoration:none;border-radius:10px;
+                    font-weight:600;font-size:15px;">
+            Log in to Admin Panel
+          </a>
+          <p style="color:#999;font-size:12px;">
+            If you didn't request this, you can safely ignore this email.<br/>
+            Or copy this link: <a href="${magicLink}" style="color:#4f63f5;">${magicLink}</a>
           </p>
-          <p style="color:#666;font-size:12px;">If you didn't request this, ignore this email.</p>
           <hr style="border:none;border-top:1px solid #eee;margin:24px 0;">
-          <p style="color:#999;font-size:11px;">CollabCart — Collaborative Shopping Cart</p>
+          <p style="color:#bbb;font-size:11px;">CollabCart — Collaborative Shopping Cart</p>
         </div>
       `,
-      text: `Your CollabCart Admin login link: ${magicLink}\n\nExpires in 10 minutes.`,
-    });
+      text: `Your CollabCart Admin login link:\n${magicLink}\n\nThis link expires in 10 minutes.`,
+    }),
+  });
 
-    return { success: true };
-  } catch (err) {
-    // Reset transporter so next request retries a fresh connection
-    transporter = null;
-    console.error('❌ SMTP send failed:', err.message);
-    throw new Error('Failed to send email: ' + err.message);
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ message: res.statusText }));
+    console.error('❌ Resend error:', error);
+    throw new Error(`Resend failed: ${error.message || res.statusText}`);
   }
+
+  const data = await res.json();
+  console.log('✅ Magic link email sent via Resend, id:', data.id);
+  return { success: true };
 }
 
 module.exports = { sendMagicLinkEmail };
