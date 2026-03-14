@@ -1,185 +1,226 @@
 // AI Service: Budget Recommendation + Smart Matching
-// Uses OpenAI if API key is set, otherwise falls back to rule-based engine
+// Uses Gemini if API key is set, otherwise falls back to rule-based engine
 
-let openai = null;
-try {
-  if (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'your_openai_api_key_here') {
-    const { OpenAI } = require('openai');
-    openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  }
-} catch (e) {
-  console.log('OpenAI not available, using rule-based fallback');
+const OpenAI = require("openai");
+
+let groq = null;
+
+if (process.env.GROQ_API_KEY) {
+  groq = new OpenAI({
+    apiKey: process.env.GROQ_API_KEY,
+    baseURL: "https://api.groq.com/openai/v1"
+  });
+
+  console.log("🤖 Groq AI initialized");
 }
+
+
+/**
+ * Safely extract JSON from Gemini responses
+ */
+function extractJson(text) {
+  try {
+    const cleaned = text
+      .replace(/```json/g, "")
+      .replace(/```/g, "")
+      .trim();
+
+    return JSON.parse(cleaned);
+  } catch (err) {
+    console.warn("⚠️ Failed to parse AI JSON:", err.message);
+    return null;
+  }
+}
+
 
 /**
  * Parse a natural language budget query.
- * Returns { occasion, budget, category, keywords }
  */
 function parseQuery(query) {
   const lowerQ = query.toLowerCase();
 
-  // Extract budget (₹, Rs., INR, numbers)
   const budgetMatch = query.match(/[₹\$]?\s*(\d[\d,]*)/);
-  const budget = budgetMatch ? parseInt(budgetMatch[1].replace(/,/g, '')) : 2000;
+  const budget = budgetMatch
+    ? parseInt(budgetMatch[1].replace(/,/g, ""))
+    : 2000;
 
-  // Detect occasion
   const occasions = {
-    birthday: ['birthday', 'bday', 'party'],
-    office: ['office', 'work', 'professional', 'corporate', 'formal'],
-    college: ['college', 'campus', 'casual', 'university'],
-    date: ['date', 'romantic', 'evening', 'dinner'],
-    gym: ['gym', 'workout', 'fitness', 'sport'],
-    wedding: ['wedding', 'marriage', 'formal'],
-    travel: ['travel', 'trip', 'vacation', 'trek'],
+    birthday: ["birthday", "bday", "party"],
+    office: ["office", "work", "professional", "corporate", "formal"],
+    college: ["college", "campus", "casual", "university"],
+    date: ["date", "romantic", "evening", "dinner"],
+    gym: ["gym", "workout", "fitness", "sport"],
+    wedding: ["wedding", "marriage", "formal"],
+    travel: ["travel", "trip", "vacation", "trek"],
   };
 
-  let occasion = 'general';
+  let occasion = "general";
+
   for (const [key, keywords] of Object.entries(occasions)) {
-    if (keywords.some(k => lowerQ.includes(k))) { occasion = key; break; }
+    if (keywords.some((k) => lowerQ.includes(k))) {
+      occasion = key;
+      break;
+    }
   }
 
-  // Detect category hint
   const categoryHints = {
-    Electronics: ['laptop', 'phone', 'gadget', 'tech', 'office setup', 'setup'],
-    Fashion: ['outfit', 'wear', 'clothes', 'dress', 'shirt', 'pants', 'shoes', 'fashion'],
-    'Sports & Fitness': ['gym', 'workout', 'fitness', 'sport', 'exercise'],
-    'Home & Kitchen': ['home', 'kitchen', 'cook', 'house'],
+    Electronics: ["laptop", "phone", "gadget", "tech", "setup"],
+    Fashion: ["outfit", "wear", "clothes", "shirt", "pants", "shoes"],
+    "Sports & Fitness": ["gym", "workout", "fitness"],
+    "Home & Kitchen": ["home", "kitchen", "cook"],
   };
 
   let preferredCategory = null;
+
   for (const [cat, keywords] of Object.entries(categoryHints)) {
-    if (keywords.some(k => lowerQ.includes(k))) { preferredCategory = cat; break; }
+    if (keywords.some((k) => lowerQ.includes(k))) {
+      preferredCategory = cat;
+      break;
+    }
   }
 
   return { occasion, budget, preferredCategory, rawQuery: query };
 }
 
+
 /**
- * Rule-based bundle optimizer.
- * Selects items that fit within budget and make logical sense together.
+ * Rule-based bundle optimizer
  */
-function selectBundle(products, { budget, occasion, preferredCategory }) {
-  // Filter by category preference if given
+function selectBundle(products, { budget, preferredCategory }) {
   let pool = preferredCategory
-    ? products.filter(p => p.category === preferredCategory || p.price <= budget * 0.6)
+    ? products.filter(
+        (p) => p.category === preferredCategory || p.price <= budget * 0.6
+      )
     : products;
 
-  // Sort by purchase count / popularity
-  pool = pool.filter(p => p.price > 0 && p.price <= budget)
-             .sort((a, b) => b.purchaseCount - a.purchaseCount);
+  pool = pool
+    .filter((p) => p.price > 0 && p.price <= budget)
+    .sort((a, b) => b.purchaseCount - a.purchaseCount);
 
   if (pool.length === 0) {
-    pool = products.filter(p => p.price <= budget).sort((a, b) => b.purchaseCount - a.purchaseCount);
+    pool = products
+      .filter((p) => p.price <= budget)
+      .sort((a, b) => b.purchaseCount - a.purchaseCount);
   }
 
-  // Greedy knapsack
   const selected = [];
   let remaining = budget;
 
   for (const product of pool) {
-    if (product.price <= remaining && !selected.find(s => s._id.toString() === product._id.toString())) {
+    if (
+      product.price <= remaining &&
+      !selected.find((s) => s._id.toString() === product._id.toString())
+    ) {
       selected.push(product);
       remaining -= product.price;
+
       if (selected.length >= 5) break;
     }
   }
 
-  // Try to fill remaining budget with cheaper items
-  if (remaining > 50 && selected.length < 5) {
-    const filler = pool.filter(p =>
-      p.price <= remaining &&
-      !selected.find(s => s._id.toString() === p._id.toString())
-    ).slice(0, 5 - selected.length);
-    selected.push(...filler);
-    remaining -= filler.reduce((sum, p) => sum + p.price, 0);
-  }
-
   const total = selected.reduce((sum, p) => sum + p.price, 0);
-  return { bundle: selected, total: parseFloat(total.toFixed(2)), remaining: parseFloat(remaining.toFixed(2)) };
+
+  return {
+    bundle: selected,
+    total: parseFloat(total.toFixed(2)),
+    remaining: parseFloat(remaining.toFixed(2)),
+  };
 }
 
+
 /**
- * Use OpenAI to generate a smarter recommendation.
+ * Gemini AI Recommendation
  */
-async function getOpenAIRecommendation(query, products, parsed) {
-  const productList = products.slice(0, 80).map(p =>
-    `ID:${p._id}|Name:${p.name}|Price:₹${p.price}|Category:${p.category}|Tags:${(p.tags || []).join(',')}`
-  ).join('\n');
+async function getGroqRecommendation(query, products, parsed) {
 
-  const prompt = `You are a smart shopping assistant. Given the user's request and available products, suggest the best combination of items.
+  const productList = products.slice(0, 50).map(p =>
+    `ID:${p._id}|Name:${p.name}|Price:${p.price}|Category:${p.category}`
+  ).join("\n");
 
-User Request: "${query}"
-Parsed: Budget=₹${parsed.budget}, Occasion=${parsed.occasion}
+  const prompt = `
+You are a smart shopping assistant.
 
-Available Products:
+User request: "${query}"
+Budget: ${parsed.budget}
+Occasion: ${parsed.occasion}
+
+Available products:
 ${productList}
 
-Rules:
-1. Total must NOT exceed ₹${parsed.budget}
-2. Select 2-5 items that logically go together for the occasion
-3. Maximize value and relevance
-4. Return ONLY valid JSON in this exact format:
+Return JSON:
+
 {
-  "occasion": "string",
-  "budget": number,
-  "bundle": [
-    {"id": "productId", "name": "product name", "price": number, "reason": "why this item"}
+ "bundle":[
+   {"id":"productId","reason":"why selected"}
+ ],
+ "message":"short message"
+}
+`;
+
+const completion = await groq.chat.completions.create({
+  model: "llama-3.3-70b-versatile",
+  messages: [
+    {
+      role: "system",
+      content: "You are an API. Always respond ONLY with valid JSON."
+    },
+    {
+      role: "user",
+      content: prompt
+    }
   ],
-  "total": number,
-  "message": "friendly message about the bundle"
-}`;
+  temperature: 0.2,
+  response_format: { type: "json_object" }
+});
 
-  const response = await openai.chat.completions.create({
-    model: 'gpt-4o-mini',
-    messages: [{ role: 'user', content: prompt }],
-    response_format: { type: 'json_object' },
-    max_tokens: 1000,
-  });
+const text = completion.choices[0].message.content
+  .replace(/```json/g, "")
+  .replace(/```/g, "")
+  .trim();
 
-  const aiResult = JSON.parse(response.choices[0].message.content);
+let aiResult;
 
-  // Hydrate with full product data
+try {
+  aiResult = JSON.parse(text);
+} catch (err) {
+  console.log("AI returned non-JSON:", text);
+  throw err;
+}
+
   const bundle = aiResult.bundle.map(item => {
     const product = products.find(p => p._id.toString() === item.id);
     return product ? { ...product, reason: item.reason } : null;
   }).filter(Boolean);
 
+  const total = bundle.reduce((sum, p) => sum + p.price, 0);
+
   return {
-    occasion: aiResult.occasion,
+    occasion: parsed.occasion,
     budget: parsed.budget,
     bundle,
-    total: bundle.reduce((sum, p) => sum + p.price, 0),
-    remaining: parsed.budget - bundle.reduce((sum, p) => sum + p.price, 0),
+    total,
+    remaining: parsed.budget - total,
     message: aiResult.message,
-    source: 'openai',
+    source: "groq"
   };
 }
 
 /**
- * Main entry point for budget recommendation.
+ * Main AI entry point
  */
 async function getBudgetRecommendation(query, products) {
+
   const parsed = parseQuery(query);
 
-  if (openai) {
+  if (groq) {
     try {
-      return await getOpenAIRecommendation(query, products, parsed);
+      return await getGroqRecommendation(query, products, parsed);
     } catch (err) {
-      console.warn('OpenAI failed, falling back to rule-based:', err.message);
+      console.warn("Groq failed, falling back to rule-based:", err.message);
     }
   }
 
-  // Rule-based fallback
   const { bundle, total, remaining } = selectBundle(products, parsed);
-
-  const occasionMessages = {
-    birthday: `Perfect birthday ${parsed.preferredCategory || 'bundle'} within your budget! 🎉`,
-    office: `Professional office setup curated for you! 💼`,
-    college: `Stylish college essentials under ₹${parsed.budget}! 🎓`,
-    date: `A perfect date-night ready selection! 💫`,
-    gym: `Get fit with this optimized gym kit! 💪`,
-    general: `Smart picks within your ₹${parsed.budget} budget! 🛍️`,
-  };
 
   return {
     occasion: parsed.occasion,
@@ -187,8 +228,8 @@ async function getBudgetRecommendation(query, products) {
     bundle,
     total,
     remaining,
-    message: occasionMessages[parsed.occasion] || occasionMessages.general,
-    source: 'rule-based',
+    message: `Smart picks within your ₹${parsed.budget} budget`,
+    source: "rule-based"
   };
 }
 

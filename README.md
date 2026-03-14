@@ -116,10 +116,6 @@ cd server
 npm run seed
 # Seeds 40+ products across Electronics, Fashion, Sports, Home & Kitchen, Books
 
-npm run seed:admin
-# Creates admin user: admin@collabcart.com / admin123 (bcrypt hashed)
-```
-
 ### 4. Start Development Servers
 
 ```bash
