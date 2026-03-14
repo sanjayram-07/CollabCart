@@ -63,11 +63,9 @@ collabcart/
 │   │   ├── services/      # api.js (Axios wrappers)
 │   │   ├── App.jsx
 │   │   └── main.jsx
-│   ├── Dockerfile
 │   ├── nginx.conf
 │   └── package.json
 │
-├── docker-compose.yml
 ├── render.yaml
 └── vercel.json
 ```
@@ -134,25 +132,6 @@ cd client && npm run dev
 
 Open **http://localhost:5173**
 
----
-
-## 🐳 Docker Setup (All-in-one)
-
-```bash
-# Build & start everything (MongoDB + Server + Client)
-docker-compose up --build
-
-# Access:
-# Frontend: http://localhost:5173
-# Backend:  http://localhost:4000
-# MongoDB:  localhost:27017
-
-# Seed data inside container
-docker exec collabcart-server node scripts/seed.js
-
-# Stop
-docker-compose down
-```
 
 ---
 
@@ -332,7 +311,3 @@ Response:
 - **Co-purchase tracking**: `PurchaseHistory` post-save hook updates `relatedProducts` on `Product` documents, improving recommendation quality over time
 
 ---
-
-## 📝 License
-
-MIT — built for learning and production use.
