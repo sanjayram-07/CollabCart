@@ -17,7 +17,7 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL || 'https://collabcart-s.vercel.app',
+    origin: true,
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -25,7 +25,7 @@ const io = new Server(server, {
 
 // Middleware
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'https://collabcart-s.vercel.app',
+  origin: true,
   credentials: true,
 }));
 app.use(express.json());
