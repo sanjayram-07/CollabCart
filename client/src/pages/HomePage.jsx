@@ -1,8 +1,10 @@
 import { useNavigate } from 'react-router-dom'
-import { ShoppingCart, Users, Zap, Shield, Sparkles, ArrowRight, Star } from 'lucide-react'
+import { ShoppingCart, Users, Zap, Shield, Sparkles, ArrowRight, Star, LogOut } from 'lucide-react'
+import { useUserAuth } from '../context/UserAuthContext'
 
 export default function HomePage() {
   const navigate = useNavigate()
+  const { user, logout, isAuthenticated } = useUserAuth()
 
   const features = [
     { icon: Users, title: 'Up to 10 users', desc: 'Shop together in real time', color: 'text-brand-400' },
@@ -34,7 +36,16 @@ export default function HomePage() {
         </div>
         <div className="flex items-center gap-3">
           <button onClick={() => navigate('/products')} className="text-sm" style={{ color: 'var(--text-secondary)' }}>Products</button>
-          <button onClick={() => navigate('/auth')} className="text-sm" style={{ color: 'var(--text-secondary)' }}>Login</button>
+          {isAuthenticated ? (
+            <>
+              <span className="text-sm" style={{ color: 'var(--text-muted)' }}>{user?.name}</span>
+              <button onClick={() => { logout(); navigate('/') }} className="btn-secondary text-sm flex items-center gap-1.5">
+                <LogOut size={14} /> Logout
+              </button>
+            </>
+          ) : (
+            <button onClick={() => navigate('/auth')} className="text-sm" style={{ color: 'var(--text-secondary)' }}>Login</button>
+          )}
           <button onClick={() => navigate('/join')} className="btn-secondary text-sm">Join Cart</button>
           <button onClick={() => navigate('/create')} className="btn-primary text-sm">Create Cart</button>
         </div>

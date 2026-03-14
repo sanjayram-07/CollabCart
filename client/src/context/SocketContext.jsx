@@ -5,7 +5,7 @@ import { useCart } from './CartContext'
 
 const SocketContext = createContext(null)
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:4000'
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'https://collabcart-s.vercel.app'
 
 export function SocketProvider({ children }) {
   const socketRef = useRef(null)
@@ -18,6 +18,7 @@ export function SocketProvider({ children }) {
       reconnection: true,
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
+      transports: ["websocket"]
     })
     socketRef.current = socket
 

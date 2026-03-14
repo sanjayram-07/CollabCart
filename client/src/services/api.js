@@ -1,11 +1,11 @@
 import axios from 'axios'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
+const API_URL = import.meta.env.VITE_API_URL || 'https://collabcart-s.vercel.app'
 
 const api = axios.create({
   baseURL: `${API_URL}/api`,
   headers: { 'Content-Type': 'application/json' },
-})
+}) 
 
 // Attach auth token when available (admin first, then user)
 api.interceptors.request.use((config) => {
